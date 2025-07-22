@@ -1,0 +1,28 @@
+# Ansible Inventory Example for AD/SSSD and PIV Configuration
+# Copy this file to 'inventory' and modify as needed
+
+[ubuntu_hosts]
+# Add your Ubuntu 22.04 servers here
+# Examples:
+# server1.example.com
+# 192.168.1.100
+# server2 ansible_host=192.168.1.101
+
+[ubuntu_hosts:vars]
+# SSH Configuration
+ansible_user=ubuntu
+ansible_ssh_private_key_file=~/.ssh/id_rsa
+ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+
+# AD Configuration
+ad_domain=yourdomain
+ad_realm=yourdomain.com
+ad_domain_controller=dc.yourdomain.com
+ad_admin_user=admin
+
+# PIV Configuration
+enable_piv=true
+ca_cert_path=/tmp/ca-cert.pem
+
+# Ansible Configuration
+ansible_python_interpreter=/usr/bin/python3

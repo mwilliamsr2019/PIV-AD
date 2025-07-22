@@ -1,0 +1,9 @@
+# Ansible Vault Example for AD/SSSD Configuration
+# Copy this file to 'vault.yml' and encrypt with: ansible-vault encrypt vault.yml
+
+# Active Directory Admin Password
+vault_ad_admin_password: "YourADAdminPasswordHere"
+
+# Optional: Additional sensitive variables
+# vault_db_password: "database_password"
+# vault_api_key: "your_api_key"

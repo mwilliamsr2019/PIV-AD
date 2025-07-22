@@ -1,0 +1,24 @@
+[sssd]
+domains = {{ ad_domain }}
+config_file_version = 2
+services = nss, pam, ssh
+
+[domain/{{ ad_domain }}]
+debug_level = 9
+enumerate = true
+id_provider = ad
+auth_provider = ad
+chpass_provider = ad
+access_provider = ad
+ldap_id_mapping = true
+cache_credentials = true
+krb5_store_password_if_offline = true
+default_shell = /bin/bash
+fallback_homedir = /home/%u@%d
+use_fully_qualified_names = true
+ad_gpo_access_control = permissive
+ad_enable_gc = false
+dyndns_update = false
+subdomain_homedir = /home/%d/%u
+ad_hostname = {{ ansible_hostname }}.{{ ad_domain }}.com
+ldap_user_ssh_public_key = sshPublicKey

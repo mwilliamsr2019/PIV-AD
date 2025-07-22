@@ -1,0 +1,4 @@
+# Enable smart card authentication
+[org/gnome/login-screen]
+enable-smartcard-authentication=true
+fallback=true

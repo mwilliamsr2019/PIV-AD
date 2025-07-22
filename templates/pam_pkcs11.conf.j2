@@ -1,0 +1,17 @@
+# PAM PKCS11 Configuration
+pkcs11_module opensc {
+    module = /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so;
+    description = "OpenSC PKCS#11 module";
+    slot_num = 0;
+    support_threads = true;
+    cert_policy = ca, signature, ocsp_on;
+    token_type = hardware;
+}
+
+# Certificate mapping
+cert_policy = ca, signature, ocsp_on;
+use_mappers = digest, cn, uid, mail, subject, serial, issuer, krb5_principal;
+use_pkcs11_module = opensc;
+
+# Debug logging
+debug = false;

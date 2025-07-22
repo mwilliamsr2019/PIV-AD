@@ -1,0 +1,18 @@
+app default {
+    # PIV card driver
+    card_driver = "piv";
+    
+    # Enable PIV support
+    enable_pin_pad = true;
+    
+    # PKCS11 configuration
+    pkcs11 {
+        # Enable PIV module
+        enable_pkcs11 = true;
+        
+        # PIN caching
+        pin_cache_ignore_user_consent = false;
+        pin_cache_counter = 10;
+        pin_cache_seconds = 300;
+    }
+}

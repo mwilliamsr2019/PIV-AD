@@ -1,0 +1,20 @@
+[libdefaults]
+    default_realm = {{ ad_realm.upper() }}
+    dns_lookup_realm = true
+    dns_lookup_kdc = true
+    ticket_lifetime = 24h
+    renew_lifetime = 7d
+    forwardable = true
+    rdns = false
+    pkinit_anchors = FILE:/etc/ssl/certs/ca-certificates.crt
+    pkinit_pool = FILE:/var/lib/sss/pubconf/krb5.include.d/*.pkinit
+
+[realms]
+    {{ ad_realm.upper() }} = {
+        kdc = {{ ad_domain_controller }}
+        admin_server = {{ ad_domain_controller }}
+    }
+
+[domain_realm]
+    .{{ ad_domain }} = {{ ad_realm.upper() }}
+    {{ ad_domain }} = {{ ad_realm.upper() }}

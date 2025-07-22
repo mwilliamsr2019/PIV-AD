@@ -1,0 +1,281 @@
+---
+# Ansible Playbook for AD/SSSD and PIV Authentication on Ubuntu 22.04
+# This playbook configures Active Directory integration and PIV smart card authentication
+
+- name: Configure AD/SSSD and PIV Authentication on Ubuntu 22.04
+  hosts: ubuntu_hosts
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # AD Configuration Variables
+    ad_domain: "example"
+    ad_realm: "example.com"
+    ad_domain_controller: "dc.example.com"
+    ad_admin_user: "admin"
+
+    # PIV Configuration Variables
+    ca_cert_path: "/tmp/ca-cert.pem"
+    enable_piv: true
+
+    # Package lists
+    ad_packages:
+    - sssd
+    - sssd-tools
+    - adcli
+    - realmd
+    - packagekit
+    - krb5-user
+    - samba-common-bin
+    - krb5-config
+    - winbind
+    - libpam-sss
+    - libnss-sss
+    - libpam-pkcs11
+    - opensc
+    - pcscd
+    - libccid
+    - libpam-ccreds
+    - libnss-db
+    - libpam-cap
+
+    piv_packages:
+    - opensc
+    - pcscd
+    - libccid
+    - libpam-pkcs11
+    - libnss3-tools
+    - coolkey
+    - libpam-ccreds
+    - libnss-db
+    - libengine-pkcs11-openssl
+    - p11-kit
+    - p11-kit-modules
+    - gnome-keyring
+    - seahorse
+    - opensc-pkcs11
+    - libp11-kit-dev
+
+  tasks:
+  - name: Update apt cache
+    apt:
+      update_cache: yes
+      cache_valid_time: 3600
+
+  - name: Install AD/SSSD packages
+    apt:
+      name: "{{ ad_packages }}"
+      state: present
+
+  - name: Install PIV packages
+    apt:
+      name: "{{ piv_packages }}"
+      state: present
+    when: enable_piv
+
+  - name: Copy Python configuration scripts
+    copy:
+      src: "{{ item }}"
+      dest: "/usr/local/bin/{{ item | basename }}"
+      mode: '0755'
+    with_fileglob:
+    - "configure_*.py"
+
+  - name: Discover and join AD domain
+    shell: |
+      realm discover {{ ad_realm }}
+      echo "{{ ad_admin_password }}" | realm join --user {{ ad_admin_user }} {{ ad_realm }}
+    register: realm_join
+    changed_when: "'Successfully enrolled machine' in realm_join.stdout"
+    failed_when: false
+    vars:
+      ad_admin_password: "{{ vault_ad_admin_password }}"
+
+  - name: Configure SSSD
+    template:
+      src: sssd.conf.j2
+      dest: /etc/sssd/sssd.conf
+      mode: '0600'
+    notify: restart sssd
+
+  - name: Configure Kerberos
+    template:
+      src: krb5.conf.j2
+      dest: /etc/krb5.conf
+      mode: '0644'
+    notify: restart sssd
+
+  - name: Configure nsswitch.conf
+    template:
+      src: nsswitch.conf.j2
+      dest: /etc/nsswitch.conf
+      mode: '0644'
+
+  - name: Configure PAM for AD/SSSD
+    template:
+      src: common-auth.j2
+      dest: /etc/pam.d/common-auth
+      mode: '0644'
+
+  - name: Configure PAM account
+    template:
+      src: common-account.j2
+      dest: /etc/pam.d/common-account
+      mode: '0644'
+
+  - name: Configure PAM session
+    template:
+      src: common-session.j2
+      dest: /etc/pam.d/common-session
+      mode: '0644'
+
+  - name: Configure SSH for AD/SSSD
+    lineinfile:
+      path: /etc/ssh/sshd_config
+      line: "{{ item }}"
+      create: yes
+    loop:
+    - "AuthorizedKeysCommand /usr/bin/sss_ssh_authorizedkeys"
+    - "AuthorizedKeysCommandUser nobody"
+    - "UsePAM yes"
+    - "ChallengeResponseAuthentication yes"
+    - "AuthenticationMethods publickey,keyboard-interactive:pam"
+    - "KerberosAuthentication yes"
+    - "KerberosOrLocalPasswd yes"
+    - "KerberosTicketCleanup yes"
+    - "GSSAPIAuthentication yes"
+    - "GSSAPICleanupCredentials yes"
+    notify: restart ssh
+
+  - name: Configure PIV smart card support
+    block:
+    - name: Configure PCSC daemon
+      systemd:
+        name: pcscd
+        enabled: yes
+        state: started
+
+    - name: Configure PCSC socket
+      systemd:
+        name: pcscd.socket
+        enabled: yes
+        state: started
+
+    - name: Create OpenSC configuration
+      template:
+        src: opensc.conf.j2
+        dest: /etc/opensc/opensc.conf
+        mode: '0644'
+
+    - name: Create PAM PKCS11 configuration
+      template:
+        src: pam_pkcs11.conf.j2
+        dest: /etc/pam_pkcs11/pam_pkcs11.conf
+        mode: '0644'
+
+    - name: Create certificate directory
+      file:
+        path: /etc/pam_pkcs11/cacerts
+        state: directory
+        mode: '0755'
+
+    - name: Configure GNOME for smart card
+      template:
+        src: 50-smartcard
+        dest: /etc/gdm3/greeter.dconf-defaults.d/50-smartcard
+        mode: '0644'
+
+    - name: Update dconf database
+      command: dconf update
+
+    - name: Copy CA certificate
+      copy:
+        src: "{{ ca_cert_path }}"
+        dest: /etc/pki/ca-trust/source/anchors/ca-cert.pem
+        mode: '0644'
+      when: ca_cert_path is defined and ca_cert_path != ""
+
+    - name: Update CA trust
+      command: update-ca-trust extract
+      when: ca_cert_path is defined and ca_cert_path != ""
+
+    - name: Configure PAM for PIV
+      template:
+        src: common-auth-piv.j2
+        dest: /etc/pam.d/common-auth
+        mode: '0644'
+
+    - name: Configure PAM session for PIV
+      template:
+        src: common-session-piv.j2
+        dest: /etc/pam.d/common-session
+        mode: '0644'
+    when: enable_piv
+
+  - name: Enable and start services
+    systemd:
+      name: "{{ item }}"
+      enabled: yes
+      state: started
+    loop:
+    - sssd
+    - ssh
+    - gdm3
+
+  - name: Test smart card detection
+    shell: pcsc_scan -n 5
+    register: smartcard_test
+    failed_when: false
+    when: enable_piv
+
+  - name: Display smart card test results
+    debug:
+      msg: "{{ smartcard_test.stdout }}"
+    when: enable_piv and smartcard_test.stdout is defined
+
+  - name: Verify AD domain join
+    shell: realm list
+    register: realm_status
+    changed_when: false
+
+  - name: Display domain status
+    debug:
+      msg: "{{ realm_status.stdout }}"
+
+  - name: Test SSSD connectivity
+    shell: getent passwd
+    register: sssd_test
+    changed_when: false
+
+  - name: Display SSSD test results
+    debug:
+      msg: "SSSD is working - found {{ sssd_test.stdout_lines | length }} users"
+
+  handlers:
+  - name: restart sssd
+    systemd:
+      name: sssd
+      state: restarted
+
+  - name: restart ssh
+    systemd:
+      name: ssh
+      state: restarted
+
+  - name: restart gdm3
+    systemd:
+      name: gdm3
+      state: restarted
+
+  post_tasks:
+  - name: Summary of configuration
+    debug:
+      msg:
+      - "AD/SSSD Configuration Complete!"
+      - "Domain: {{ ad_realm }}"
+      - "PIV Smart Card: {{ 'Enabled' if enable_piv else 'Disabled' }}"
+      - "Next steps:"
+      - "1. Test login with AD credentials"
+      - "2. Test PIV card insertion and authentication"
+      - "3. Verify SSH access with AD/PIV"
+      - "4. Check logs: journalctl -u sssd -f"
